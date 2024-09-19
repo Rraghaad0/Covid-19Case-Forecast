@@ -1,0 +1,173 @@
+---
+title: "Try2ForProject"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+date: "2023-10-24"
+---
+
+```{r}
+data1 <- read.csv("C:\\Users\\rragh\\Downloads\\owid-covid-data.csv")
+
+head(data1,10)
+```
+
+```{r}
+# filter Oceania
+DataOceania <- data1 |>
+  filter( continent == "Oceania")
+```
+
+```{r}
+# check missing values 
+sum(is.na(DataOceania))
+```
+> Yes there is Missing values
+
+```{r}
+#convert monthly data
+DataOceania_m <- DataOceania |>
+  mutate(Month = yearmonth(date)) |>
+  select(-date)
+```
+
+```{r}
+# Remove duplicate
+DataOceania_m <- DataOceania_m |>
+  distinct(Month, continent, .keep_all = TRUE)
+
+```
+
+```{r}
+# Tsibble
+DataOceania_tsi <- DataOceania_m |>
+  as_tsibble(index = Month , key=continent)
+```
+
+```{r}
+# Remove Missing values
+DataOceania_tsi <- DataOceania_tsi |>
+  filter(!is.na(new_cases))
+```
+
+```{r}
+#Group by columns
+DataOceania_tsi <- DataOceania_tsi |>
+  group_by(continent)
+  
+head(DataOceania_tsi, 5)
+```
+
+```{r}
+# Select columns
+DataOceania_tsi <- DataOceania_tsi |>
+  select(continent, Month, new_cases)
+
+head(DataOceania_tsi, 10)
+```
+
+```{r}
+# summarize
+DataOceania_tsi_sum <- DataOceania_tsi |>
+  summarise(
+    min_new_cases = min(new_cases, na.rm = TRUE),
+    max_new_cases = max(new_cases, na.rm = TRUE),
+    total_new_cases = sum(new_cases, na.rm = TRUE)
+  )
+```
+
+
+```{r}
+DataOceania_tsi_sum
+```
+
+> Part 2 
+
+```{r}
+# plot
+DataOceania_tsi |>
+  autoplot(new_cases)
+```
+```{r}
+# Seasonal plot
+DataOceania_tsi |>
+  gg_season(new_cases)
+```
+```{r}
+acf(DataOceania_tsi, lag.max = 24)
+```
+```{r}
+# subseries plot
+DataOceania_tsi |>
+  gg_subseries(new_cases)
+```
+
+> Part 3
+
+```{r}
+Data_fit <- DataOceania_tsi |>
+  model(
+    Naive  = NAIVE(new_cases),
+    Seasonal_naive = SNAIVE(new_cases),
+    Drift = RW(new_cases ~ drift()),
+    MEAN = MEAN(new_cases),
+  )
+```
+```{r}
+Data_fc <- Data_fit |>
+  forecast(h = "2 months")
+```
+
+```{r}
+Data_fc |>
+autoplot(DataOceania_tsi, level = NULL) + 
+guides(colour = guide_legend(title = "Forecast"))
+```
+
+
+```{r}
+train <- DataOceania_tsi %>%
+  filter_index("2020 Jan" ~ "2023 Jul")
+```
+
+
+```{r}
+Data_fit2 <- train |>
+model(
+Mean = MEAN(new_cases), 
+Naive = NAIVE(new_cases),
+Seasonal_naive = SNAIVE(new_cases), 
+Drift = RW(new_cases ~ drift()),
+)
+```
+
+```{r}
+Data_fc2 <- Data_fit2 |> 
+forecast(h = "2 month")
+```
+
+```{r}
+Data_fc2 |>
+  autoplot(
+    DataOceania_tsi |> filter(year(Month) >= 2020),
+    level = NULL
+  ) +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+
+```{r}
+#Training
+accuracy(Data_fit2) |> 
+arrange(.model) |>
+select(.model, .type, RMSE, MAE, MAPE, MASE, RMSSE)
+```
+
+```{r}
+#Test
+accuracy(Data_fc2, DataOceania_tsi) |> 
+arrange(.model) |>
+select(.model, .type, RMSE, MAE, MAPE, MASE, RMSSE)
+```
+
